@@ -1,0 +1,224 @@
+// ============================================================
+// fin-loans-contract-processor — Database Schema
+// Modelagem pensada para:
+// - Alta volumetria (+10M req/dia)
+// - Histórico completo de status
+// - Multi-produto com configs de webhook próprias
+// - Segurança (dados sensíveis criptografados)
+// - Outbox Pattern para consistência com Kafka
+// - Idempotency Keys para evitar duplicatas
+// - Auditoria completa
+// ============================================================
+
+
+// ------------------------------------------------------------
+// PRODUTOS
+// Representa empresas/clientes que enviam contratos (ex: Vivo)
+// ------------------------------------------------------------
+Table products {
+  id            uuid        [pk, default: `gen_random_uuid()`]
+  name          varchar(255) [not null]
+  slug          varchar(100) [not null, unique, note: 'Identificador legível. Ex: vivo, tim, claro']
+  api_key_hash  text        [not null, note: 'Hash da API key usada para autenticação do produto']
+  is_active     boolean     [not null, default: true]
+  created_at    timestamptz [not null, default: `now()`]
+  updated_at    timestamptz [not null, default: `now()`]
+
+  Note: 'Empresas/produtos que submetem contratos ao sistema'
+}
+
+
+// ------------------------------------------------------------
+// CONFIGURAÇÕES DE WEBHOOK POR PRODUTO
+// Cada produto pode ter múltiplos endpoints e configs próprias
+// ------------------------------------------------------------
+Table product_webhook_configs {
+  id            uuid        [pk, default: `gen_random_uuid()`]
+  product_id    uuid        [not null, ref: > products.id]
+  webhook_url   text        [not null, note: 'URL de destino do webhook']
+  secret_hash   text        [not null, note: 'Hash do secret para assinatura HMAC do payload']
+  is_active     boolean     [not null, default: true]
+  retry_limit   int         [not null, default: 3]
+  timeout_ms    int         [not null, default: 5000]
+  created_at    timestamptz [not null, default: `now()`]
+  updated_at    timestamptz [not null, default: `now()`]
+
+  Note: 'Configurações de webhook por produto. Suporta múltiplos endpoints'
+}
+
+
+// ------------------------------------------------------------
+// CONFIGURAÇÕES DE NOTIFICAÇÃO POR EMAIL POR PRODUTO
+// ------------------------------------------------------------
+Table product_notification_configs {
+  id            uuid        [pk, default: `gen_random_uuid()`]
+  product_id    uuid        [not null, ref: > products.id]
+  email         varchar(255) [not null, note: 'Criptografado em repouso']
+  notify_on_approval  boolean [not null, default: true]
+  notify_on_rejection boolean [not null, default: true]
+  is_active     boolean     [not null, default: true]
+  created_at    timestamptz [not null, default: `now()`]
+
+  Note: 'Emails de notificação configurados por produto'
+}
+
+
+// ------------------------------------------------------------
+// TOMADORES
+// Pessoa física que solicita o contrato
+// Dados sensíveis criptografados em repouso
+// ------------------------------------------------------------
+Table borrowers {
+  id              uuid        [pk, default: `gen_random_uuid()`]
+  cpf_encrypted   text        [not null, note: 'CPF criptografado (AES-256). Nunca armazenar em plain text']
+  cpf_hash        text        [not null, unique, note: 'Hash do CPF para buscas sem descriptografar']
+  name_encrypted  text        [not null, note: 'Nome completo criptografado']
+  email_encrypted text        [note: 'Email criptografado']
+  phone_encrypted text        [note: 'Telefone criptografado']
+  created_at      timestamptz [not null, default: `now()`]
+  updated_at      timestamptz [not null, default: `now()`]
+
+  Note: 'Dados pessoais do tomador. Dados sensíveis criptografados com AES-256'
+}
+
+
+// ------------------------------------------------------------
+// CONTRATOS
+// Entidade central do sistema
+// ------------------------------------------------------------
+Table contracts {
+  id                  uuid        [pk, default: `gen_random_uuid()`]
+  idempotency_key     varchar(255) [not null, unique, note: 'Chave enviada pelo produto para evitar duplicatas']
+  product_id          uuid        [not null, ref: > products.id]
+  borrower_id         uuid        [not null, ref: > borrowers.id]
+
+  // Dados financeiros
+  amount_cents        bigint      [not null, note: 'Valor em centavos para evitar float']
+  interest_rate       numeric(8,4) [not null, note: 'Taxa de juros (ex: 2.5500)']
+  installments        int         [not null]
+  disbursement_date   date        [not null, note: 'Não pode ser inferior a hoje — validado no Credit Worker']
+
+  // Status atual (desnormalizado para performance em queries simples)
+  current_status      varchar(50) [not null, default: 'pending', note: 'pending | credit_approved | credit_rejected | fraud_clear | fraud_detected | completed | failed']
+
+  // Resultado das análises
+  credit_analysis_result  varchar(20) [note: 'approved | rejected | null enquanto pendente']
+  fraud_analysis_result   varchar(20) [note: 'clear | detected | null enquanto pendente']
+  rejection_reasons       jsonb       [note: 'Array de motivos de rejeição. Ex: ["disbursement_date_invalid", "cpf_invalid"]']
+
+  // Rastreabilidade
+  external_reference  varchar(255) [note: 'Referência do contrato no sistema do produto (opcional)']
+  processed_at        timestamptz  [note: 'Timestamp do fim do processamento']
+  created_at          timestamptz  [not null, default: `now()`]
+  updated_at          timestamptz  [not null, default: `now()`]
+
+  indexes {
+    idempotency_key           [unique, name: 'idx_contracts_idempotency_key']
+    product_id                [name: 'idx_contracts_product_id']
+    borrower_id               [name: 'idx_contracts_borrower_id']
+    current_status            [name: 'idx_contracts_current_status']
+    created_at                [name: 'idx_contracts_created_at']
+    (product_id, created_at)  [name: 'idx_contracts_product_created']
+  }
+
+  Note: 'Entidade central. idempotency_key garante que o mesmo contrato não seja processado duas vezes'
+}
+
+
+// ------------------------------------------------------------
+// HISTÓRICO DE STATUS DO CONTRATO
+// Imutável — nunca atualizar, só inserir
+// Permite auditoria completa da jornada de cada contrato
+// ------------------------------------------------------------
+Table contract_status_history {
+  id            uuid        [pk, default: `gen_random_uuid()`]
+  contract_id   uuid        [not null, ref: > contracts.id]
+  status        varchar(50) [not null, note: 'pending | credit_approved | credit_rejected | fraud_clear | fraud_detected | completed | failed']
+  reason        text        [note: 'Motivo da transição, especialmente em rejeições']
+  metadata      jsonb       [note: 'Dados adicionais do worker que gerou a transição (ex: score de crédito, flags de fraude)']
+  created_by    varchar(100) [not null, note: 'Worker responsável. Ex: credit_validation_worker, fraud_detection_worker']
+  created_at    timestamptz [not null, default: `now()`]
+
+  indexes {
+    contract_id             [name: 'idx_status_history_contract_id']
+    (contract_id, created_at) [name: 'idx_status_history_contract_created']
+  }
+
+  Note: 'Append-only. Rastreia toda a jornada de status do contrato para auditoria completa'
+}
+
+
+// ------------------------------------------------------------
+// OUTBOX
+// Garante consistência entre escrita no DB e publicação no Kafka
+// Worker de Outbox lê essa tabela e publica os eventos pendentes
+// ------------------------------------------------------------
+Table outbox_events {
+  id              uuid        [pk, default: `gen_random_uuid()`]
+  aggregate_type  varchar(100) [not null, note: 'Qual entidade gerou o evento. Ex: contract, borrower']
+  aggregate_id    uuid        [not null, note: 'ID da entidade relacionada ao evento. Ex: id do contrato']
+  event_type      varchar(100) [not null, note: 'Ex: contract.created, contract.approved, contract.rejected']
+  payload         jsonb       [not null, note: 'Payload completo do evento a ser publicado no Kafka']
+  status          varchar(20) [not null, default: 'pending', note: 'pending | published | failed']
+  attempts        int         [not null, default: 0]
+  last_error      text        [note: 'Último erro ao tentar publicar']
+  published_at    timestamptz [note: 'Timestamp da publicação bem-sucedida no Kafka']
+  created_at      timestamptz [not null, default: `now()`]
+
+  indexes {
+    (status, created_at) [name: 'idx_outbox_status_created', note: 'Query principal do Outbox Worker']
+    aggregate_id         [name: 'idx_outbox_aggregate_id']
+  }
+
+  Note: 'Outbox Pattern — garante que nenhum evento seja perdido entre a escrita no DB e a publicação no Kafka'
+}
+
+
+// ------------------------------------------------------------
+// ENTREGAS DE WEBHOOK
+// Rastreia cada tentativa de entrega por contrato e produto
+// ------------------------------------------------------------
+Table webhook_deliveries {
+  id              uuid        [pk, default: `gen_random_uuid()`]
+  contract_id     uuid        [not null, ref: > contracts.id]
+  webhook_config_id uuid      [not null, ref: > product_webhook_configs.id]
+  event_type      varchar(100) [not null, note: 'Ex: contract.approved, contract.rejected']
+  payload         jsonb       [not null, note: 'Payload enviado no webhook']
+  status          varchar(20) [not null, default: 'pending', note: 'pending | success | failed | exhausted']
+  attempts        int         [not null, default: 0]
+  last_http_status int        [note: 'Último HTTP status recebido do endpoint do produto']
+  last_error      text        [note: 'Último erro de entrega']
+  next_attempt_at timestamptz [note: 'Agendamento do próximo retry (backoff exponencial)']
+  delivered_at    timestamptz [note: 'Timestamp da entrega bem-sucedida']
+  created_at      timestamptz [not null, default: `now()`]
+  updated_at      timestamptz [not null, default: `now()`]
+
+  indexes {
+    contract_id              [name: 'idx_webhook_deliveries_contract_id']
+    (status, next_attempt_at) [name: 'idx_webhook_deliveries_retry', note: 'Query do Webhook Worker para retries']
+  }
+
+  Note: 'Rastreia cada tentativa de entrega de webhook com suporte a retry e backoff exponencial'
+}
+
+
+// ------------------------------------------------------------
+// ENTREGAS DE NOTIFICAÇÃO POR EMAIL
+// ------------------------------------------------------------
+Table notification_deliveries {
+  id                      uuid        [pk, default: `gen_random_uuid()`]
+  contract_id             uuid        [not null, ref: > contracts.id]
+  notification_config_id  uuid        [not null, ref: > product_notification_configs.id]
+  event_type              varchar(100) [not null]
+  status                  varchar(20) [not null, default: 'pending', note: 'pending | sent | failed']
+  attempts                int         [not null, default: 0]
+  last_error              text
+  sent_at                 timestamptz
+  created_at              timestamptz [not null, default: `now()`]
+
+  indexes {
+    contract_id [name: 'idx_notification_deliveries_contract_id']
+  }
+
+  Note: 'Rastreia entregas de notificação por email por contrato'
+} 

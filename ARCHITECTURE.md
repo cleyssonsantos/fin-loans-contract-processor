@@ -32,7 +32,7 @@ Vale mencionar que 10 milhões/dia não significa necessariamente alta concorrê
   - Exemplo:
     - data_desembolso não pode ser inferior a hoje.
     - CPF do tomador deve ser válido.
-- Enviar webhook/notificação para email/rota do produto cadastrado.
+- Enviar webhook/notificação para emails/rotas do produto cadastrado.
   - Exemplo:
     - a Vivo mandou 10k contratos.
     - o sistema processa e retorna quais foram cadastrados ou rejeitados.
@@ -201,7 +201,7 @@ Para o sistema evoluir de 10 milhões de requisições por dia para algo próxim
 
 A tendência natural seria dividir o monolito modular em serviços independentes como:
 
-- Contract Service.
+- Authentication Service.
 - Credit Analysis Service.
 - Webhook Service.
 - Notification Service.
