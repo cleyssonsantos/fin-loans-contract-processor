@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     kafka_consumer_group_id: str = "loans-consumer-group"
 
     # Auth
+    jwt_private_key_path: str = "./secrets/private.pem"
+    jwt_public_key_path: str = "./secrets/public.pem"
     jwt_algorithm: str = "RS256"
     jwt_access_token_expire_minutes: int = 60
 
@@ -23,6 +25,7 @@ class Settings(BaseSettings):
 
     # OpenTelemetry
     otel_service_name: str = "fin-loans-contract-processor"
+    otel_exporter_otlp_endpoint: str = "http://otel-collector:4317"
 
     class Config:
         env_file = ".env"

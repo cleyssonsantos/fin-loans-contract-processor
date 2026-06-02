@@ -177,6 +177,64 @@ make migrate  # roda as migrations
 
 ---
 
+## Migrations (Alembic)
+
+As migrations são gerenciadas pelo [Alembic](https://alembic.sqlalchemy.org/) e rodam dentro do container via `make`.
+
+### Aplicar todas as migrations pendentes
+
+```bash
+make migrate
+# equivale a: alembic upgrade head
+```
+
+### Criar uma nova migration (autogenerate)
+
+Após alterar um SQLAlchemy model em `src/adapters/outbound/persistence/models/`, execute:
+
+```bash
+make migration msg="descricao da mudanca"
+# equivale a: alembic revision --autogenerate -m "descricao da mudanca"
+```
+
+> **Importante:** sempre revise o arquivo gerado em `alembic/versions/` antes de aplicar. O autogenerate não detecta tudo (ex: alterações em `server_default`, tipos customizados).
+
+### Rollback
+
+```bash
+make shell
+
+# Desfaz a última migration aplicada
+alembic downgrade -1
+
+# Desfaz todas as migrations (volta ao estado vazio)
+alembic downgrade base
+```
+
+### Verificar status
+
+```bash
+make shell
+
+# Mostra a revision atualmente aplicada no banco
+alembic current
+
+# Mostra todo o histórico de migrations
+alembic history --verbose
+```
+
+### Workflow completo para uma nova feature
+
+```
+1. Alterar/criar model em src/adapters/outbound/persistence/models/
+2. make migration msg="adiciona coluna X na tabela Y"
+3. Revisar o arquivo gerado em alembic/versions/
+4. make migrate
+5. Commitar o model + o arquivo de migration juntos
+```
+
+---
+
 ## Autor
 
 Desenvolvido como projeto de portfólio para demonstrar domínio em arquitetura de sistemas distribuídos, event-driven design e engenharia de software orientada a boas práticas.
