@@ -11,6 +11,10 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
 
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+
 [tool.coverage.run]
 source = ["src"]
 omit = ["tests/*"]
