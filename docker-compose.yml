@@ -1,0 +1,107 @@
+version: "3.9"
+
+services:
+
+  # API — FastAPI com hot reload
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: loans_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://loans_user:loans_pass@postgres:5432/loans_db
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - loans_network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: loans_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: loans_db
+      POSTGRES_USER: loans_user
+      POSTGRES_PASSWORD: loans_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/db_postgresql.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loans_user -d loans_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - loans_network
+    restart: unless-stopped
+
+  # exigido pelo Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.0
+    container_name: loans_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - loans_network
+    restart: unless-stopped
+
+  # healthcheck via nc (netcat) — mais confiável que kafka-broker-api-versions
+  kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: loans_kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks:
+      - loans_network
+    restart: unless-stopped
+
+  # Kafka UI — visualização de tópicos e mensagens
+  # http://localhost:8080
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: loans_kafka_ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      - kafka
+    networks:
+      - loans_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  loans_network:
+    driver: bridge

@@ -132,6 +132,47 @@ Toda a observabilidade é baseada em **OpenTelemetry**, cobrindo:
 
 > 🚧 Em fase de arquitetura e design — implementação em breve.
 
+## Estrutura de pastas
+
+```
+src/
+├── domain/                    # Entities, value objects, domain events — zero external deps
+│   ├── contracts/
+│   ├── borrowers/
+│   └── products/
+├── application/
+│   ├── use_cases/             # Business logic orchestration (contracts/, borrowers/, products/)
+│   └── ports/
+│       ├── inbound/           # Interfaces que os use cases expõem
+│       └── outbound/          # Interfaces que os use cases dependem (repos, events, notifications)
+├── adapters/
+│   ├── inbound/               # O mundo externo aciona o sistema por aqui
+│   │   ├── http/              # FastAPI routes + middleware (entry point: routes/health.py)
+│   │   └── workers/           # Kafka consumers (outbox, credit, fraud, notification, webhook)
+│   └── outbound/              # O sistema fala com o mundo externo por aqui
+│       ├── persistence/       # SQLAlchemy models + concrete repository implementations
+│       ├── messaging/         # kafka_producer.py — implementa event_publisher_port
+│       ├── security/          # jwt_adapter.py, encryption_adapter.py
+│       └── notifications/     # webhook_adapter.py, email_adapter.py
+└── infrastructure/            # Setup técnico puro, sem lógica de negócio
+    ├── database/              # connection.py — pool, engine, session factory
+    └── messaging/             # kafka_client.py — configuração do producer/consumer
+```
+
+## Para subir o projeto
+
+cp .env.example .env
+make up
+--Acesse http://localhost:8000/docs
+
+## Comandos úteis via Makefile
+
+make dev      # sobe com logs no terminal
+make test     # roda os testes
+make lint     # roda o ruff
+make shell    # entra no container
+make migrate  # roda as migrations
+
 ---
 
 ## Autor

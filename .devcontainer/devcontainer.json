@@ -1,0 +1,58 @@
+{
+  "name": "fin-loans-contract-processor",
+  "dockerComposeFile": ["../docker-compose.yml"],
+  "service": "api",
+  "workspaceFolder": "/app",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-python.debugpy",
+        "mtxr.sqltools",
+        "mtxr.sqltools-driver-pg",
+        "rangav.vscode-thunder-client",
+        "streetsidesoftware.code-spell-checker",
+        "usernamehw.errorlens",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        },
+        "ruff.enable": true,
+        "ruff.lint.enable": true,
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["tests/"],
+        "sqltools.connections": [
+          {
+            "name": "loans_db (local)",
+            "driver": "PostgreSQL",
+            "host": "postgres",
+            "port": 5432,
+            "database": "loans_db",
+            "username": "loans_user",
+            "password": "loans_pass"
+          }
+        ]
+      }
+    }
+  },
+
+  "forwardPorts": [8000, 5432, 9092, 8080],
+
+  "portsAttributes": {
+    "8000": { "label": "FastAPI", "onAutoForward": "openBrowser" },
+    "8080": { "label": "Kafka UI" },
+    "5432": { "label": "PostgreSQL" }
+  },
+
+  "postCreateCommand": "pip install -r requirements.txt",
+
+  "remoteUser": "root"
+}
