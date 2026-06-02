@@ -28,6 +28,8 @@ O projeto está atualmente na fase de **arquitetura e design**, com toda a estru
 
 O sistema foi projetado como um **monolito modular orientado a eventos**, utilizando princípios de **Arquitetura Hexagonal** e **Clean Architecture**. Essa abordagem reduz a complexidade operacional inicial sem abrir mão do desacoplamento necessário para evoluções futuras.
 
+![Arquitetura do Projeto](ARCHITECTURE.png)
+
 ```
 Client
   ↓ (Load Balancer)
