@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    env:
+      APP_SECRET_KEY: ci-secret-key-not-for-production-use!!
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci_db
+      JWT_PRIVATE_KEY_PATH: ./secrets/private.pem
+      JWT_PUBLIC_KEY_PATH: ./secrets/public.pem
+      ENCRYPTION_KEY: ci-encryption-key-32-bytes-long!!1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Gerar chaves JWT para testes
+        run: python seeds/gen_keys.py
+
+      - name: Lint
+        run: ruff check src/ tests/
+
+      - name: Testes
+        run: pytest tests/ -v --cov=src --cov-report=term-missing
