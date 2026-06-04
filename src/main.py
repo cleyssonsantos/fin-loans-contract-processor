@@ -3,7 +3,9 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from redis.asyncio import Redis
 
+from src.adapters.inbound.http.middleware.rate_limit import RateLimitMiddleware
 from src.adapters.inbound.http.routes import health
 from src.config import settings
 
@@ -18,7 +20,10 @@ async def lifespan(app: FastAPI):
             raise RuntimeError(
                 f"Required file not found for {var_name}: {path_str!r}"
             )
+
+    app.state.redis = Redis.from_url(settings.redis_url, decode_responses=False)
     yield
+    await app.state.redis.aclose()
 
 
 app = FastAPI(
@@ -30,12 +35,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS é adicionado primeiro → fica na posição externa do stack (executa antes do rate limit)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Rate limit é adicionado por último → fica na posição mais externa (executa por primeiro)
+app.add_middleware(
+    RateLimitMiddleware,
+    limit=settings.rate_limit_requests,
+    window=settings.rate_limit_window_seconds,
 )
 
 app.include_router(health.router, prefix="/api/v1", tags=["Health"])

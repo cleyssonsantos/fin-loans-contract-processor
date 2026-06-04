@@ -15,6 +15,7 @@ jobs:
       JWT_PRIVATE_KEY_PATH: ./secrets/private.pem
       JWT_PUBLIC_KEY_PATH: ./secrets/public.pem
       ENCRYPTION_KEY: ci-encryption-key-32-bytes-long!!1
+      REDIS_URL: redis://localhost:6379
 
     steps:
       - uses: actions/checkout@v4

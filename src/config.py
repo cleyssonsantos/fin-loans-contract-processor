@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # Encryption
     encryption_key: str  # required — must be ≥ 32 bytes for AES-256
 
+    # Redis / Rate limiting
+    redis_url: str = "redis://redis:6379"
+    rate_limit_requests: int = 100
+    rate_limit_window_seconds: int = 60
+
     # OpenTelemetry
     otel_service_name: str = "fin-loans-contract-processor"
     otel_exporter_otlp_endpoint: str = "http://otel-collector:4317"
