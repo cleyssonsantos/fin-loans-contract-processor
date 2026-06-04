@@ -1,5 +1,5 @@
 from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     jwt_private_key_path: str  # required — file existence checked in app lifespan
     jwt_public_key_path: str  # required — file existence checked in app lifespan
     jwt_algorithm: str = "RS256"
-    jwt_access_token_expire_minutes: int = 60
+    jwt_access_token_expire_seconds: int = 3600
+    jwt_expiry_warning_threshold_seconds: int = 300
 
     # Encryption
     encryption_key: str  # required — must be ≥ 32 bytes for AES-256
@@ -42,9 +43,7 @@ class Settings(BaseSettings):
             )
         return v
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
 settings = Settings()  # type: ignore[call-arg]

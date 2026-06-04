@@ -65,6 +65,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         api_key = request.headers.get("X-API-Key")
         if api_key:
             return "key:" + hashlib.sha256(api_key.encode()).hexdigest()[:16]
+        # Quando atrás do Nginx, X-Real-IP carrega o IP real do cliente.
+        # Sem ele, request.client.host seria o IP do próprio Nginx.
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return "ip:" + real_ip
         if request.client:
             return "ip:" + request.client.host
         return "unknown"
