@@ -1,4 +1,4 @@
-.PHONY: help up down dev logs ps shell test lint
+.PHONY: help up down dev logs ps shell test lint seed seed-contracts seed-deliveries seed-all gen-keys
 
 help: ## Mostra os comandos disponíveis
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -32,3 +32,18 @@ migrate: ## Roda as migrations do Alembic
 
 migration: ## Cria uma nova migration (uso: make migration msg="descricao")
 	docker compose exec api alembic revision --autogenerate -m "$(msg)"
+
+seed: ## Sobe dados de configuração (products, webhook e notification configs)
+	docker compose exec api python seeds/seed.py config
+
+seed-contracts: ## Sobe borrower + contrato seed para testar endpoints (requer make seed)
+	docker compose exec api python seeds/seed.py contracts
+
+seed-deliveries: ## Sobe webhook/notification deliveries seed (requer make seed-contracts)
+	docker compose exec api python seeds/seed.py deliveries
+
+seed-all: ## Sobe todos os dados de desenvolvimento de uma vez
+	docker compose exec api python seeds/seed.py all
+
+gen-keys: ## Gera as chaves JWT RS256 e a ENCRYPTION_KEY para desenvolvimento
+	docker compose exec api python seeds/gen_keys.py

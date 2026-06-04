@@ -161,10 +161,74 @@ src/
     └── messaging/             # kafka_client.py — configuração do producer/consumer
 ```
 
+## Configuração das chaves criptográficas
+
+Antes de subir o projeto pela primeira vez, você precisa gerar um par de chaves JWT e uma chave de criptografia. Aqui vai o contexto de por que cada uma existe.
+
+### JWT RS256 — assimetria por design
+
+O projeto usa RS256 (RSA + SHA-256) em vez do HS256 que aparece na maioria dos tutoriais. A diferença está na assimetria: a **chave privada assina** os tokens, a **chave pública verifica**. Com HS256 (simétrico), qualquer serviço que precisar validar um token também consegue emitir um — o que não é o que você quer quando a arquitetura começa a crescer.
+
+Com RS256, você pode distribuir a chave pública para todos os serviços sem abrir mão do controle sobre quem emite tokens.
+
+No plano de evolução do projeto, a emissão de tokens vai migrar para um serviço dedicado de autenticação. Quando isso acontecer, a chave privada vai para esse serviço, e este aqui fica apenas com a pública — validando tokens sem poder criá-los. É uma separação de responsabilidades que já está no design desde o início.
+
+Em desenvolvimento, as duas chaves ficam em `./secrets/` (gitignored). Em produção: AWS Secrets Manager — nunca em disco sem proteção.
+
+### AES-256-GCM — criptografia em repouso
+
+CPF, nome, e-mail e telefone são dados pessoais que caem diretamente na LGPD. Criptografar em trânsito (HTTPS) é o mínimo — o projeto vai além e criptografa **em repouso**: os dados chegam ao banco já criptografados, e quem acessar diretamente as tabelas vê apenas ciphertext.
+
+O modo GCM (Galois/Counter Mode) é autenticado: além de garantir confidencialidade, detecta qualquer adulteração nos dados criptografados. O único lugar onde a chave existe é no `.env` — nunca no banco, nunca no código.
+
+Em produção: rotação periódica da chave com reencriptação dos dados, e armazenamento via secrets manager.
+
+### Gerando as chaves
+
+O script `seeds/gen_keys.py` usa a biblioteca `cryptography` (já no `requirements.txt`) e não depende do `openssl` instalado na máquina.
+
+**Dentro do Docker ou devcontainer (recomendado):**
+
+```bash
+make gen-keys
+```
+
+**Fora do Docker, na máquina host:**
+
+```bash
+# Instale a dependência se não tiver localmente
+pip install cryptography
+
+python seeds/gen_keys.py
+```
+
+O script vai:
+1. Criar o diretório `secrets/` na raiz do projeto
+2. Gerar `secrets/private.pem` e `secrets/public.pem` (RSA 2048-bit)
+3. Imprimir os valores de `APP_SECRET_KEY` e `ENCRYPTION_KEY` para você colar no `.env`
+
+> O diretório `secrets/` está no `.gitignore`. Nunca commite as chaves nem o `.env` com valores reais.
+
+---
+
 ## Para subir o projeto
 
+### Checklist inicial (primeira vez)
+
+```bash
+# 1. Copie o arquivo de variáveis de ambiente
 cp .env.example .env
+
+# 2. Gere as chaves criptográficas
+make gen-keys
+
+# 3. Cole APP_SECRET_KEY e ENCRYPTION_KEY no .env com os valores impressos pelo script
+#    JWT_PRIVATE_KEY_PATH e JWT_PUBLIC_KEY_PATH já apontam para os caminhos corretos
+
+# 4. Suba os serviços
 make up
+```
+
 --Acesse http://localhost:8000/docs
 
 ## Comandos úteis via Makefile
