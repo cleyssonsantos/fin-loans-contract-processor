@@ -1,4 +1,4 @@
-.PHONY: help up down dev logs ps shell test lint seed seed-contracts seed-deliveries seed-all gen-keys
+.PHONY: help up down dev logs ps shell test lint seed seed-contracts seed-deliveries seed-all gen-keys scale test-lb
 
 help: ## Mostra os comandos disponíveis
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -47,3 +47,9 @@ seed-all: ## Sobe todos os dados de desenvolvimento de uma vez
 
 gen-keys: ## Gera as chaves JWT RS256 e a ENCRYPTION_KEY para desenvolvimento
 	docker compose exec api python seeds/gen_keys.py
+
+scale: ## Sobe N réplicas da API atrás do Nginx (uso: make scale N=3)
+	docker compose up --scale api=$(or $(N),3) -d
+
+test-lb: ## Roda os testes de integração do load balancer (requer make scale)
+	docker compose exec api pytest tests/test_load_balancer.py -v -m integration

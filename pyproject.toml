@@ -10,6 +10,13 @@ ignore = ["E501"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+addopts = ["-m", "not integration"]
+filterwarnings = [
+    "ignore::DeprecationWarning:jose",
+]
+markers = [
+    "integration: requer stack completo rodando com Nginx e múltiplas instâncias da API (make scale)",
+]
 
 [tool.mypy]
 python_version = "3.12"

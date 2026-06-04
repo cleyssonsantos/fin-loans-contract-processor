@@ -5,8 +5,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
+from src.adapters.inbound.http.middleware.auth import AuthMiddleware
+from src.adapters.inbound.http.middleware.log_sanitizer import setup_logging
 from src.adapters.inbound.http.middleware.rate_limit import RateLimitMiddleware
-from src.adapters.inbound.http.routes import health
+from src.adapters.inbound.http.routes import auth, health
 from src.config import settings
 
 
@@ -21,6 +23,7 @@ async def lifespan(app: FastAPI):
                 f"Required file not found for {var_name}: {path_str!r}"
             )
 
+    setup_logging()
     app.state.redis = Redis.from_url(settings.redis_url, decode_responses=False)
     yield
     await app.state.redis.aclose()
@@ -35,7 +38,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS é adicionado primeiro → fica na posição externa do stack (executa antes do rate limit)
+# Em Starlette, o último add_middleware() vira o mais externo (executa primeiro).
+# Ordem de execução: RateLimit → Auth → CORS → App
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -43,8 +47,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Rate limit é adicionado por último → fica na posição mais externa (executa por primeiro)
+app.add_middleware(AuthMiddleware)
 app.add_middleware(
     RateLimitMiddleware,
     limit=settings.rate_limit_requests,
@@ -52,3 +55,4 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api/v1", tags=["Health"])
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
