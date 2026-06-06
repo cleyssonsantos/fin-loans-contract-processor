@@ -1,15 +1,13 @@
 import logging
 import re
 
-# Padrões que identificam campos sensíveis em mensagens de log.
-# Formato capturado: chave=valor, "chave": "valor", chave: valor
 _SENSITIVE_PATTERN = re.compile(
-    r'(?i)'                                      # case-insensitive
+    r'(?i)'
     r'('
     r'(?:cpf|email|phone|api[_\-]?key|password|token|authorization|name_encrypted)'
     r')'
-    r'(\s*[:=]\s*)'                              # separador
-    r'([^\s,\}\]"\']+|"[^"]*"|\'[^\']*\')',     # valor
+    r'(\s*[:=]\s*)'                          # separador (= ou :)
+    r'([^\s,\}\]"\']+|"[^"]*"|\'[^\']*\')', # valor até whitespace ou vírgula
     re.IGNORECASE,
 )
 
@@ -33,7 +31,8 @@ class SensitiveDataFilter(logging.Filter):
                 }
             elif isinstance(record.args, tuple):
                 record.args = tuple(
-                    _SENSITIVE_PATTERN.sub(_MASK, str(a)) for a in record.args
+                    _SENSITIVE_PATTERN.sub(_MASK, a) if isinstance(a, str) else a
+                    for a in record.args
                 )
         return True
 

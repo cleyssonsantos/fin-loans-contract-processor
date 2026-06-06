@@ -69,7 +69,7 @@ class ProductNotificationConfigModel(Base):
         ForeignKey("products.id", deferrable=True, initially="IMMEDIATE"),
         nullable=False,
     )
-    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(Text, nullable=False)
     notify_on_approval: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
