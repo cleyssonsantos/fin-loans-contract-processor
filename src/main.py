@@ -8,7 +8,13 @@ from redis.asyncio import Redis
 from src.adapters.inbound.http.middleware.auth import AuthMiddleware
 from src.adapters.inbound.http.middleware.log_sanitizer import setup_logging
 from src.adapters.inbound.http.middleware.rate_limit import RateLimitMiddleware
-from src.adapters.inbound.http.routes import auth, health
+from src.adapters.inbound.http.routes import (
+    auth,
+    health,
+    notification_configs,
+    products,
+    webhook_configs,
+)
 from src.config import settings
 
 
@@ -19,9 +25,7 @@ async def lifespan(app: FastAPI):
         ("JWT_PUBLIC_KEY_PATH", settings.jwt_public_key_path),
     ]:
         if not Path(path_str).is_file():
-            raise RuntimeError(
-                f"Required file not found for {var_name}: {path_str!r}"
-            )
+            raise RuntimeError(f"Required file not found for {var_name}: {path_str!r}")
 
     setup_logging()
     app.state.redis = Redis.from_url(settings.redis_url, decode_responses=False)
@@ -38,8 +42,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Em Starlette, o último add_middleware() vira o mais externo (executa primeiro).
-# Ordem de execução: RateLimit → Auth → CORS → App
+# starlette empilha middlewares na ordem inversa — execução: RateLimit → Auth → CORS → app
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -56,3 +59,8 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/api/v1", tags=["Health"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
+app.include_router(products.router, prefix="/api/v1", tags=["Products"])
+app.include_router(webhook_configs.router, prefix="/api/v1", tags=["Webhook Configs"])
+app.include_router(
+    notification_configs.router, prefix="/api/v1", tags=["Notification Configs"]
+)

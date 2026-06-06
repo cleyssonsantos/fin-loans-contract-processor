@@ -10,7 +10,7 @@ from src.adapters.outbound.security import jwt_adapter
 from src.config import settings
 
 _EXCLUDE_PATHS: frozenset[str] = frozenset(
-    {"/api/v1/health", "/api/v1/auth/token", "/docs", "/redoc", "/openapi.json"}
+    {"/api/v1/health", "/api/v1/auth/token", "/api/v1/products", "/docs", "/redoc", "/openapi.json"}
 )
 
 _MISSING_TOKEN = Response(

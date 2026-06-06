@@ -41,9 +41,7 @@ async def create_token(
             detail="API key inválida ou produto inativo.",
         )
 
-    token = jwt_adapter.create_token(
-        {"sub": str(product.id), "slug": product.slug}
-    )
+    token = jwt_adapter.create_token({"sub": str(product.id), "slug": product.slug})
     return TokenResponse(
         access_token=token,
         expires_in=settings.jwt_access_token_expire_seconds,

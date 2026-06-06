@@ -88,6 +88,53 @@ Início
 
 ---
 
+## Garantias arquiteturais
+
+### Pureza do domínio
+
+A camada `src/domain/` importa **apenas stdlib Python** — sem SQLAlchemy, Pydantic, FastAPI ou qualquer outro framework. Isso significa que as regras de negócio podem ser testadas sem subir banco, container ou servidor HTTP.
+
+| Camada | Pode importar | Nunca pode importar |
+|---|---|---|
+| `domain/` | `uuid`, `datetime`, `dataclasses`, `hashlib`, `secrets` | SQLAlchemy, Pydantic, FastAPI, qualquer framework |
+| `application/ports/` | domínio, `abc` | qualquer implementação concreta |
+| `application/use_cases/` | domínio, ports (ABCs puras) | SQLAlchemy, modelos de persistência, FastAPI |
+| `adapters/outbound/persistence/` | ports, modelos SQLAlchemy, domínio | FastAPI, Kafka |
+
+### Ports agnósticas de infraestrutura
+
+Todos os repositórios são definidos como ABCs em `src/application/ports/outbound/`. Os use cases dependem **da interface**, não da implementação. Para trocar PostgreSQL por MySQL ou MongoDB: basta criar uma nova classe que implemente a port — domínio e use cases não mudam uma linha.
+
+```
+# Hoje
+PostgreSQLProductRepository(ProductRepositoryPort)  →  PostgreSQL via SQLAlchemy
+
+# Amanhã, sem tocar em nada além do adapter
+MongoProductRepository(ProductRepositoryPort)       →  MongoDB via Motor
+MySQLProductRepository(ProductRepositoryPort)       →  MySQL via aiomysql
+```
+
+### Fluxo de dependências sem ciclos
+
+```
+domain/  ←  application/ports/  ←  application/use_cases/
+                                            ↑
+                                 adapters/outbound/persistence/
+                                 (implementa a port; importa SQLAlchemy)
+```
+
+As setas indicam "depende de". Infra conhece o domínio; domínio não conhece infra.
+
+### Segurança por design — API key
+
+A `api_key` bruta de um produto é gerada via `secrets.token_urlsafe(32)` e **nunca é armazenada** — apenas seu hash SHA-256 vai ao banco. Consequências:
+
+- `POST /products` → retorna `api_key` uma única vez (igual a um GitHub PAT)
+- `GET /products/{id}` → sem campo `api_key` na resposta
+- Perda da chave = necessidade de rotação; não há como recuperar
+
+---
+
 ## Estratégia de escalabilidade
 
 O sistema foi pensado para crescer de **1 milhão → 10 milhões → 100 milhões** de requisições/dia com impacto mínimo na arquitetura:
