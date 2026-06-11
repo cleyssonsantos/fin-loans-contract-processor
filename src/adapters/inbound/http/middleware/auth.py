@@ -21,17 +21,11 @@ _MISSING_TOKEN = Response(
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    """Valida o JWT RS256 em todas as rotas protegidas.
+    """JWT RS256 para rotas fora de _EXCLUDE_PATHS.
 
-    Rotas em _EXCLUDE_PATHS (health, auth/token, docs) passam sem token.
-    Para as demais:
-    - Token ausente → 401 "Token de autenticação ausente."
-    - Token expirado → 401 "Token expirado."
-    - Token inválido → 401 "Token inválido."
-    - Token válido → injeta claims em request.state.token_claims e adiciona
-      X-Token-Expires-In (segundos restantes) na resposta. Quando restam
-      menos de jwt_expiry_warning_threshold_seconds, adiciona também
-      X-Token-Expiry-Warning: true.
+    Claims ficam em request.state.token_claims pra quem precisar downstream.
+    Adiciona X-Token-Expires-In em toda resposta autenticada; se estiver
+    próximo de expirar, adiciona também X-Token-Expiry-Warning: true.
     """
 
     def __init__(self, app: ASGIApp, exclude_paths: frozenset[str] | None = None) -> None:

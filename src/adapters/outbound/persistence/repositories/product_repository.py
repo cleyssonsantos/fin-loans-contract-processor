@@ -47,6 +47,13 @@ class PostgreSQLProductRepository(ProductRepositoryPort):
         result = await self._session.execute(query)
         return [_to_domain(row) for row in result.scalars().all()]
 
+    async def get_by_api_key_hash(self, api_key_hash: str) -> Product | None:
+        result = await self._session.execute(
+            select(ProductModel).where(ProductModel.api_key_hash == api_key_hash)
+        )
+        model = result.scalar_one_or_none()
+        return _to_domain(model) if model else None
+
     async def update(self, product: Product) -> None:
         result = await self._session.execute(
             select(ProductModel).where(ProductModel.id == product.id)
@@ -68,12 +75,3 @@ def _to_domain(model: ProductModel) -> Product:
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
-
-
-async def get_by_api_key_hash(
-    session: AsyncSession, api_key_hash: str
-) -> ProductModel | None:
-    result = await session.execute(
-        select(ProductModel).where(ProductModel.api_key_hash == api_key_hash)
-    )
-    return result.scalar_one_or_none()

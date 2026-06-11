@@ -10,6 +10,7 @@ from src.adapters.inbound.http.middleware.log_sanitizer import setup_logging
 from src.adapters.inbound.http.middleware.rate_limit import RateLimitMiddleware
 from src.adapters.inbound.http.routes import (
     auth,
+    contracts,
     health,
     notification_configs,
     products,
@@ -42,7 +43,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# starlette empilha middlewares na ordem inversa — execução: RateLimit → Auth → CORS → app
+# starlette inverte a ordem de add: o último adicionado executa primeiro (RateLimit → Auth → CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -58,6 +59,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api/v1", tags=["Health"])
+app.include_router(contracts.router, prefix="/api/v1", tags=["Contracts"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(products.router, prefix="/api/v1", tags=["Products"])
 app.include_router(webhook_configs.router, prefix="/api/v1", tags=["Webhook Configs"])
