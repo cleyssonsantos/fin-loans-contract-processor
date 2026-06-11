@@ -3,10 +3,10 @@
 Seed script for development data.
 
 Usage (inside the API container via Makefile targets or `make shell`):
-    python seeds/seed.py config       — products, webhook configs, notification configs
-    python seeds/seed.py contracts    — borrower + contract + status history + outbox event
-    python seeds/seed.py deliveries   — webhook + notification deliveries (requires contracts)
-    python seeds/seed.py all          — everything above
+    python scripts/seed.py config       — products, webhook configs, notification configs
+    python scripts/seed.py contracts    — borrower + contract + status history + outbox event
+    python scripts/seed.py deliveries   — webhook + notification deliveries (requires contracts)
+    python scripts/seed.py all          — everything above
 """
 import argparse
 import asyncio
@@ -384,10 +384,10 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Exemplos:\n"
-            "  python seeds/seed.py config       # sobe apenas configurações\n"
-            "  python seeds/seed.py contracts     # sobe borrower + contrato (requer config)\n"
-            "  python seeds/seed.py deliveries    # sobe deliveries (requer contracts)\n"
-            "  python seeds/seed.py all           # sobe tudo\n"
+            "  python scripts/seed.py config       # sobe apenas configurações\n"
+            "  python scripts/seed.py contracts     # sobe borrower + contrato (requer config)\n"
+            "  python scripts/seed.py deliveries    # sobe deliveries (requer contracts)\n"
+            "  python scripts/seed.py all           # sobe tudo\n"
         ),
     )
     parser.add_argument(

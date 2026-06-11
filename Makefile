@@ -34,19 +34,19 @@ migration: ## Cria uma nova migration (uso: make migration msg="descricao")
 	docker compose exec api alembic revision --autogenerate -m "$(msg)"
 
 seed: ## Sobe dados de configuração (products, webhook e notification configs)
-	docker compose exec api python seeds/seed.py config
+	docker compose exec api python scripts/seed.py config
 
 seed-contracts: ## Sobe borrower + contrato seed para testar endpoints (requer make seed)
-	docker compose exec api python seeds/seed.py contracts
+	docker compose exec api python scripts/seed.py contracts
 
 seed-deliveries: ## Sobe webhook/notification deliveries seed (requer make seed-contracts)
-	docker compose exec api python seeds/seed.py deliveries
+	docker compose exec api python scripts/seed.py deliveries
 
 seed-all: ## Sobe todos os dados de desenvolvimento de uma vez
-	docker compose exec api python seeds/seed.py all
+	docker compose exec api python scripts/seed.py all
 
 gen-keys: ## Gera as chaves JWT RS256 e a ENCRYPTION_KEY para desenvolvimento
-	docker compose exec api python seeds/gen_keys.py
+	docker compose exec api python scripts/gen_keys.py
 
 scale: ## Sobe N réplicas da API atrás do Nginx (uso: make scale N=3)
 	docker compose up --scale api=$(or $(N),3) -d
