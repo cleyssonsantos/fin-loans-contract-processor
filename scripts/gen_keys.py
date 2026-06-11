@@ -3,8 +3,8 @@
 Gera as chaves JWT RS256 e a ENCRYPTION_KEY para desenvolvimento local.
 
 Uso:
-    python seeds/gen_keys.py          # gera as chaves (falha se já existirem)
-    python seeds/gen_keys.py --force  # sobrescreve arquivos existentes
+    python scripts/gen_keys.py          # gera as chaves (falha se já existirem)
+    python scripts/gen_keys.py --force  # sobrescreve arquivos existentes
 
 Ou via Makefile (dentro do Docker/devcontainer):
     make gen-keys

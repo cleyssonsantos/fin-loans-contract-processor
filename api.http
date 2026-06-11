@@ -1,0 +1,198 @@
+# fin-loans-contract-processor — REST Client (VS Code)
+# Extensão necessária: "REST Client" por Huachao Mao (humao.rest-client)
+#
+# Fluxo básico:
+#   1. make up                     → sobe os serviços
+#   2. make seed                   → cria o produto dev com api_key fixa
+#   3. Dispare o request de auth   → token capturado automaticamente
+#   4. Submeta um contrato         → pegue o id na resposta para consultar depois
+#
+# Se não quiser rodar o seed, crie um produto pelo request "Criar produto" e
+# cole a api_key retornada em @apiKey abaixo.
+
+@baseUrl    = http://localhost:8000
+@apiVersion = /api/v1
+
+# api_key padrão do seed — troque se criou o produto na mão
+@apiKey = dev-api-key-12345
+
+
+# =============================================================================
+# AUTH
+# =============================================================================
+
+### Gerar token JWT
+# @name auth
+POST {{baseUrl}}{{apiVersion}}/auth/token
+Content-Type: application/json
+
+{
+  "api_key": "{{apiKey}}"
+}
+
+# O token fica em {{auth.response.body.access_token}} e é reutilizado abaixo.
+
+
+# =============================================================================
+# PRODUTOS
+# =============================================================================
+
+### Criar produto (pule se já rodou o seed)
+# @name createProduct
+POST {{baseUrl}}{{apiVersion}}/products
+Content-Type: application/json
+
+{
+  "name": "Dev Product",
+  "slug": "dev-product"
+}
+
+# A api_key aparece uma única vez nessa resposta — copie e cole em @apiKey acima.
+
+
+### Listar produtos (pegar o product_id)
+# @name listProducts
+GET {{baseUrl}}{{apiVersion}}/products
+
+
+# =============================================================================
+# CONTRATOS
+# =============================================================================
+# @idempotencyKey fixo abaixo → mesmo contrato a cada reenvio.
+# Para testar idempotência: dispare o request "Submeter contrato" duas vezes
+# com a mesma key — a resposta é idêntica e nada é reprocessado.
+# Para criar um novo contrato: troque a key por outro UUID.
+
+@idempotencyKey = a1b2c3d4-e5f6-7890-abcd-ef1234567890
+
+# product_id do seed. Se criou manualmente, copie de listProducts.response.body.items[0].id
+@productId = 00000000-0000-0000-0000-000000000001
+
+
+### Submeter contrato
+# @name submitContract
+POST {{baseUrl}}{{apiVersion}}/contracts
+Content-Type: application/json
+Authorization: Bearer {{auth.response.body.access_token}}
+Idempotency-Key: {{idempotencyKey}}
+
+{
+  "product_id": "{{productId}}",
+  "cpf": "529.982.247-25",
+  "name": "João da Silva",
+  "email": "joao.silva@example.com",
+  "phone": "11987654321",
+  "amount_cents": 1500000,
+  "interest_rate": 0.0199,
+  "installments": 12,
+  "disbursement_date": "2026-09-01",
+  "external_reference": "REF-DEV-001"
+}
+
+
+### Consultar contrato (usa o id retornado pelo POST acima)
+GET {{baseUrl}}{{apiVersion}}/contracts/{{submitContract.response.body.id}}
+Authorization: Bearer {{auth.response.body.access_token}}
+
+
+### Submeter contrato com UUID novo (cria um contrato diferente a cada envio)
+POST {{baseUrl}}{{apiVersion}}/contracts
+Content-Type: application/json
+Authorization: Bearer {{auth.response.body.access_token}}
+Idempotency-Key: {{$guid}}
+
+{
+  "product_id": "{{productId}}",
+  "cpf": "529.982.247-25",
+  "name": "João da Silva",
+  "email": "joao.silva@example.com",
+  "phone": "11987654321",
+  "amount_cents": 2000000,
+  "interest_rate": 0.0249,
+  "installments": 24,
+  "disbursement_date": "2026-09-15",
+  "external_reference": "REF-DEV-002"
+}
+
+
+# =============================================================================
+# CENÁRIOS DE ERRO
+# =============================================================================
+
+### CPF inválido → 422
+POST {{baseUrl}}{{apiVersion}}/contracts
+Content-Type: application/json
+Authorization: Bearer {{auth.response.body.access_token}}
+Idempotency-Key: {{$guid}}
+
+{
+  "product_id": "{{productId}}",
+  "cpf": "111.111.111-11",
+  "name": "Teste CPF Inválido",
+  "amount_cents": 500000,
+  "interest_rate": 0.015,
+  "installments": 6,
+  "disbursement_date": "2026-09-01"
+}
+
+
+### Data de desembolso no passado → 422
+POST {{baseUrl}}{{apiVersion}}/contracts
+Content-Type: application/json
+Authorization: Bearer {{auth.response.body.access_token}}
+Idempotency-Key: {{$guid}}
+
+{
+  "product_id": "{{productId}}",
+  "cpf": "529.982.247-25",
+  "name": "Teste Data Passada",
+  "amount_cents": 500000,
+  "interest_rate": 0.015,
+  "installments": 6,
+  "disbursement_date": "2020-01-01"
+}
+
+
+### Sem Idempotency-Key → 422
+POST {{baseUrl}}{{apiVersion}}/contracts
+Content-Type: application/json
+Authorization: Bearer {{auth.response.body.access_token}}
+
+{
+  "product_id": "{{productId}}",
+  "cpf": "529.982.247-25",
+  "name": "Teste Sem Key",
+  "amount_cents": 500000,
+  "interest_rate": 0.015,
+  "installments": 6,
+  "disbursement_date": "2026-09-01"
+}
+
+
+### Sem token → 401
+POST {{baseUrl}}{{apiVersion}}/contracts
+Content-Type: application/json
+Idempotency-Key: {{$guid}}
+
+{
+  "product_id": "{{productId}}",
+  "cpf": "529.982.247-25",
+  "name": "Teste Sem Auth",
+  "amount_cents": 500000,
+  "interest_rate": 0.015,
+  "installments": 6,
+  "disbursement_date": "2026-09-01"
+}
+
+
+### Contrato inexistente → 404
+GET {{baseUrl}}{{apiVersion}}/contracts/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{auth.response.body.access_token}}
+
+
+# =============================================================================
+# HEALTH
+# =============================================================================
+
+### Health check
+GET {{baseUrl}}{{apiVersion}}/health

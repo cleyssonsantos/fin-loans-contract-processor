@@ -8,19 +8,27 @@
 
 O **fin-loans-contract-processor** é um sistema backend de processamento de contratos financeiros capaz de lidar com **+10 milhões de requisições por dia**. Ele recebe contratos de crédito, executa validações de negócio e antifraude, persiste os dados e notifica os produtos cadastrados via webhook — tudo de forma assíncrona e resiliente.
 
-O projeto está atualmente na fase de **arquitetura e design**, com toda a estrutura técnica definida antes da implementação, garantindo decisões sólidas desde o início.
+O núcleo do sistema está em desenvolvimento ativo — autenticação, submissão e consulta de contratos, persistência e circuit breaker já estão implementados e cobertos por testes.
 
 ---
 
 ## Funcionalidades
 
-- Recebimento e validação de contratos de crédito
-- Validações de negócio (ex: CPF válido, data de desembolso não retroativa)
-- Análise de crédito assíncrona via workers especializados
-- Detecção de fraude integrada ao fluxo de processamento
-- Persistência de contratos e histórico de status no banco de dados
-- Envio de webhooks e notificações por e-mail para produtos cadastrados
-- Retorno detalhado dos motivos de rejeição por contrato
+- ✅ Autenticação de produtos via API key com emissão de JWT RS256 (`POST /api/v1/auth/token`)
+- ✅ Submissão de contratos de crédito (`POST /api/v1/contracts`)
+- ✅ Consulta de contrato por ID (`GET /api/v1/contracts/{id}`)
+- ✅ Validações de domínio: CPF (algoritmo de dígito verificador), data de desembolso (≥ hoje), valor (> 0), parcelas (≥ 1)
+- ✅ Idempotência forte: `Idempotency-Key` header + `INSERT … ON CONFLICT DO NOTHING` — N envios = 1 processamento
+- ✅ Criptografia em repouso dos dados do tomador (AES-256-GCM): CPF, nome, e-mail, telefone
+- ✅ Outbox Pattern: borrower + contrato + evento gravados atomicamente na mesma transação
+- ✅ Circuit Breaker (CLOSED→OPEN→HALF_OPEN) com fallback 503 + `Retry-After`
+- ✅ Retry automático (tenacity, 3 tentativas com backoff exponencial) no publisher de eventos
+- ✅ HATEOAS nos endpoints de contrato: links `self` e `product` em todas as respostas
+- ✅ Testes de arquitetura automatizados (ports sem implementação, dependências proibidas, pureza do domínio)
+- ⏳ Análise de crédito assíncrona via workers Kafka
+- ⏳ Detecção de fraude integrada ao fluxo
+- ⏳ Webhooks e notificações por e-mail para produtos cadastrados
+- ⏳ Retorno detalhado dos motivos de rejeição
 
 ---
 
@@ -59,6 +67,106 @@ Início
           ├── Fraude Detectada → Salvar Status → Webhook → Fim (Reprovado)
           └── Fraude Negativa → Salvar Status → Notificação + Webhook → Salvar: Finalizado com Sucesso → Fim do Fluxo
 ```
+
+---
+
+## API — Endpoints implementados
+
+### `POST /api/v1/contracts`
+
+Aceita um contrato para processamento assíncrono. Requer autenticação JWT.
+
+**Headers obrigatórios**
+
+| Header | Descrição |
+|---|---|
+| `Authorization` | `Bearer <jwt_token>` |
+| `Idempotency-Key` | UUID único por tentativa de envio — garante exatamente-uma-vez mesmo sob reenvios |
+
+**Body (JSON)**
+
+```json
+{
+  "product_id": "uuid",
+  "cpf": "123.456.789-09",
+  "name": "Maria Oliveira",
+  "email": "maria@example.com",
+  "phone": "11987654321",
+  "amount_cents": 1500000,
+  "interest_rate": 0.0199,
+  "installments": 12,
+  "disbursement_date": "2026-07-01",
+  "external_reference": "REF-001"
+}
+```
+
+**Resposta — 202 Accepted**
+
+```json
+{
+  "id": "uuid",
+  "status": "pending",
+  "created_at": "2026-06-09T14:00:00Z",
+  "links": {
+    "self":    { "href": "/api/v1/contracts/{id}", "method": "GET" },
+    "product": { "href": "/api/v1/products/{product_id}", "method": "GET" }
+  }
+}
+```
+
+**Comportamentos garantidos**
+
+| Cenário | Resposta |
+|---|---|
+| Primeira submissão válida | 202 — contrato criado, evento `contract.submitted` gravado na outbox |
+| Mesma `Idempotency-Key` reenviada (N vezes) | 202 com os dados do contrato original — sem reprocessamento |
+| CPF inválido (dígito verificador incorreto) | 422 — `"CPF inválido: dígitos verificadores incorretos"` |
+| `disbursement_date` no passado | 422 — `"data de desembolso não pode ser anterior a hoje"` |
+| `amount_cents ≤ 0` | 422 |
+| `Idempotency-Key` ausente | 422 (validação automática do FastAPI) |
+| Outbox indisponível (circuit aberto) | 503 — header `Retry-After: 60` |
+
+**Sobre a idempotência**
+
+O campo `idempotency_key` tem constraint `UNIQUE` no banco. O adapter usa `INSERT … ON CONFLICT (idempotency_key) DO NOTHING`: se dois requests chegarem simultaneamente com a mesma key, um vence no banco e o outro lê o contrato já existente — sem exceção, sem race condition, sem necessidade de lock distribuído.
+
+Se o `contract_id` for perdido após o POST, basta reenviar com a mesma `Idempotency-Key`. A resposta trará o contrato original com `is_duplicate: true` — sem reprocessamento.
+
+---
+
+### `GET /api/v1/contracts/{id}`
+
+Retorna os dados e o status atual de um contrato. Requer autenticação JWT.
+
+**Resposta — 200 OK**
+
+```json
+{
+  "id": "uuid",
+  "status": "pending",
+  "product_id": "uuid",
+  "borrower_id": "uuid",
+  "amount_cents": 1500000,
+  "interest_rate": 0.0199,
+  "installments": 12,
+  "disbursement_date": "2026-07-01",
+  "external_reference": "REF-001",
+  "created_at": "2026-06-09T14:00:00Z",
+  "updated_at": "2026-06-09T14:00:00Z",
+  "links": {
+    "self":    { "href": "/api/v1/contracts/{id}", "method": "GET" },
+    "product": { "href": "/api/v1/products/{product_id}", "method": "GET" }
+  }
+}
+```
+
+**Respostas de erro**
+
+| Cenário | Resposta |
+|---|---|
+| ID não encontrado | 404 — `"contrato não encontrado"` |
+| Token ausente ou inválido | 401 |
+| `{id}` não é um UUID válido | 422 |
 
 ---
 
@@ -148,12 +256,15 @@ Workers **stateless** e processamento **assíncrono** são os pilares que tornam
 
 ## Resiliência e tratamento de falhas
 
-| Categoria | Estratégias |
-|---|---|
-| Proteção da API | Rate limiting · Throttling · Auth JWT RS256 · Schema Validation |
-| Falha na instância | Healthcheck · Restart policies · Load balancing |
-| Falha em dependências | Circuit breaker · Timeout · Retry · Fallback |
-| Falha no fluxo | Idempotência · Dead Letter Queue |
+| Categoria | Estratégias | Status |
+|---|---|---|
+| Proteção da API | Rate limiting · Auth JWT RS256 · Schema Validation | ✅ |
+| Falha na instância | Healthcheck · Restart policies · Load balancing | ✅ |
+| Idempotência | `INSERT … ON CONFLICT DO NOTHING` — exatamente-uma-vez por `Idempotency-Key` | ✅ |
+| Retry automático | Tenacity (3 tentativas, backoff exponencial 1–4s) no outbox publisher | ✅ |
+| Circuit Breaker | CLOSED → OPEN após 5 falhas → HALF_OPEN após 60s; fallback 503 + `Retry-After` | ✅ |
+| Outbox Pattern | Evento gravado atomicamente com o contrato; worker Kafka lê quando disponível | ✅ outbox / ⏳ worker |
+| Dead Letter Queue | Mensagens com falha persistente isoladas para reprocessamento | ⏳ |
 
 ---
 
@@ -179,7 +290,21 @@ Toda a observabilidade é baseada em **OpenTelemetry**, cobrindo:
 
 ## Status do projeto
 
-> 🚧 Em fase de arquitetura e design — implementação em breve.
+**Implementado e testado**
+
+- `POST /api/v1/auth/token` — autenticação de produtos via API key, emite JWT RS256
+- `POST /api/v1/contracts` — submissão assíncrona com 202, idempotência forte e outbox pattern
+- `GET /api/v1/contracts/{id}` — consulta de contrato com HATEOAS
+- Arquitetura hexagonal completa: domain → ports (ABCs) → use cases → adapters, sem vazamento de dependências
+- Testes de arquitetura automatizados que quebram o CI se algum princípio for violado
+- Dados do tomador criptografados em repouso (AES-256-GCM)
+- Circuit breaker + retry com backoff no publisher de eventos
+
+**Próximos passos**
+
+- Workers Kafka: outbox → credit validation → fraud detection → notification/webhook
+- Dead Letter Queue para mensagens com falha persistente
+- OpenTelemetry (tracing distribuído)
 
 ## Estrutura de pastas
 
@@ -232,7 +357,7 @@ Em produção: rotação periódica da chave com reencriptação dos dados, e ar
 
 ### Gerando as chaves
 
-O script `seeds/gen_keys.py` usa a biblioteca `cryptography` (já no `requirements.txt`) e não depende do `openssl` instalado na máquina.
+O script `scripts/gen_keys.py` usa a biblioteca `cryptography` (já no `requirements.txt`) e não depende do `openssl` instalado na máquina.
 
 **Dentro do Docker ou devcontainer (recomendado):**
 
@@ -246,7 +371,7 @@ make gen-keys
 # Instale a dependência se não tiver localmente
 pip install cryptography
 
-python seeds/gen_keys.py
+python scripts/gen_keys.py
 ```
 
 O script vai:
